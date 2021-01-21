@@ -140,8 +140,10 @@ class f_anogan():
 
             loss.backward()
             self.optimizer_Ge.step()
+            self.optimizer_D.step()
             self.optimizer_Ge.zero_grad()
             self.net_Ds[i_D].zero_grad()
+            self.net_Gds[i_G].zero_grad()
             if i % 10 == 0:
                 print(
                     "[Epoch %d/%d] [Batch %d/%d] [Ge %d loss: %f]"#, [D %d loss: %f]"
