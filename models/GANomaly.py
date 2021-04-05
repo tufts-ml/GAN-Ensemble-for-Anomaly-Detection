@@ -9,6 +9,7 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.utils.data
 import torchvision.utils as vutils
+from models.basemodel import *
 
 from models.networks import NetG, NetD, weights_init
 from models.evaluate import evaluate
@@ -26,7 +27,7 @@ class BaseModel():
     """ Base Model for ganomaly
     """
 
-    def __init__(self, opt, dataloader):
+    def __init__(self, opt):
         ##
         # Seed for deterministic behavior
         self.seed(opt.manualseed)
@@ -34,11 +35,13 @@ class BaseModel():
         # Initalize variables.
         self.opt = opt
         self.visualizer = Visualizer(opt)
-        self.dataloader = dataloader
         self.trn_dir = os.path.join(self.opt.outf, self.opt.name, 'train')
         self.tst_dir = os.path.join(self.opt.outf, self.opt.name, 'test')
         self.device = torch.device("cuda:0" if self.opt.device != 'cpu' else "cpu")
+        self.dataloader_setup()
 
+    def dataloader_setup(self):
+        raise NotImplementedError("dataloader_setup not implemented")
     ##
     def set_input(self, input: torch.Tensor):
         """ Set input and ground truth
@@ -115,10 +118,10 @@ class BaseModel():
 
         weight_dir = os.path.join(self.opt.outf, self.opt.name, 'train', 'weights')
         if not os.path.exists(weight_dir): os.makedirs(weight_dir)
-        for idx_g in range(self.opt.NG):
+        for idx_g in range(self.opt.n_G):
             torch.save({'epoch': epoch + 1, 'state_dict': self.netgs[idx_g].state_dict()},
                        '%s/netG_%d.pth' % (weight_dir, idx_g))
-        for idx_d in range(self.opt.ND):
+        for idx_d in range(self.opt.n_D):
             torch.save({'epoch': epoch + 1, 'state_dict': self.netds[idx_d].state_dict()},
                        '%s/netD_%d.pth' % (weight_dir, idx_d))
 
@@ -130,12 +133,12 @@ class BaseModel():
         # self.netg.train()
 
         epoch_iter = 0
-        for data in tqdm(self.dataloader['train'], leave=False, total=len(self.dataloader['train'])):
+        for data in tqdm(self.dataloader.train, leave=False, total=len(self.dataloader.train)):
             self.total_steps += self.opt.batchsize
             epoch_iter += self.opt.batchsize
 
-            idx_d = random.randint(0, self.opt.ND - 1)
-            idx_g = random.randint(0, self.opt.NG - 1)
+            idx_d = random.randint(0, self.opt.n_D - 1)
+            idx_g = random.randint(0, self.opt.n_G - 1)
 
             self.netgs[idx_g].train()
             self.netds[idx_d].train()
@@ -146,7 +149,7 @@ class BaseModel():
             if self.total_steps % self.opt.print_freq == 0:
                 errors = self.get_errors()
                 if self.opt.display:
-                    counter_ratio = float(epoch_iter) / len(self.dataloader['train'].dataset)
+                    counter_ratio = float(epoch_iter) / len(self.dataloader.train.dataset)
                     self.visualizer.plot_current_errors(self.epoch, counter_ratio, errors)
 
 
@@ -197,27 +200,27 @@ class BaseModel():
             self.opt.phase = 'test'
 
             # Create big error tensor for the test set.
-            self.an_scores = torch.zeros(size=(len(self.dataloader['test'].dataset),), dtype=torch.float32,
+            self.an_scores = torch.zeros(size=(len(self.dataloader.valid.dataset),), dtype=torch.float32,
                                          device=self.device)
-            self.gt_labels = torch.zeros(size=(len(self.dataloader['test'].dataset),), dtype=torch.long,
+            self.gt_labels = torch.zeros(size=(len(self.dataloader.valid.dataset),), dtype=torch.long,
                                          device=self.device)
-            self.latent_i = torch.zeros(size=(len(self.dataloader['test'].dataset), self.opt.nz), dtype=torch.float32,
+            self.latent_i = torch.zeros(size=(len(self.dataloader.valid.dataset), self.opt.nz), dtype=torch.float32,
                                         device=self.device)
-            self.latent_o = torch.zeros(size=(len(self.dataloader['test'].dataset), self.opt.nz), dtype=torch.float32,
+            self.latent_o = torch.zeros(size=(len(self.dataloader.valid.dataset), self.opt.nz), dtype=torch.float32,
                                         device=self.device)
 
 
             self.times = []
             self.total_steps = 0
             epoch_iter = 0
-            for i, data in enumerate(self.dataloader['test'], 0):
+            for i, data in enumerate(self.dataloader.valid, 0):
                 self.total_steps += self.opt.batchsize
                 epoch_iter += self.opt.batchsize
                 time_i = time.time()
                 self.set_input(data)
                 latent_is = []
                 latent_os = []
-                for idx_g in range(self.opt.NG):
+                for idx_g in range(self.opt.n_G):
                     # self.fake, latent_i, latent_o = self.netgs[idx_g](self.input)
                     _, latent_i, latent_o = self.netgs[idx_g](self.input)
                     latent_is.append(latent_i)
@@ -253,7 +256,7 @@ class BaseModel():
             performance = OrderedDict([('Avg Run Time (ms/batch)', self.times), ('AUC', auc)])
 
             if self.opt.display_id > 0 and self.opt.phase == 'test':
-                counter_ratio = float(epoch_iter) / len(self.dataloader['test'].dataset)
+                counter_ratio = float(epoch_iter) / len(self.dataloader.valid.dataset)
                 self.visualizer.plot_performance(self.epoch, counter_ratio, performance)
             return performance
 
@@ -267,8 +270,8 @@ class Ganomaly(BaseModel):
     def name(self):
         return 'Ganomaly'
 
-    def __init__(self, opt, dataloader):
-        super(Ganomaly, self).__init__(opt, dataloader)
+    def __init__(self, opt):
+        super(Ganomaly, self).__init__(opt)
 
         # -- Misc attributes
         self.epoch = 0
@@ -307,10 +310,12 @@ class Ganomaly(BaseModel):
                 self.netgs[i].train()
             for i in range(self.opt.n_D):
                 self.netds[i].train()
-            self.optimizer_d = optim.Adam(sum([list(self.netds[i].parameters()) for i in range(self.opt.ND)], []),
+            self.optimizer_d = optim.Adam(sum([list(self.netds[i].parameters()) for i in range(self.opt.n_D)], []),
                                           lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
-            self.optimizer_g = optim.Adam(sum([list(self.netgs[i].parameters()) for i in range(self.opt.NG)], []),
+            self.optimizer_g = optim.Adam(sum([list(self.netgs[i].parameters()) for i in range(self.opt.n_G)], []),
                                           lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
+    def dataloader_setup(self):
+        self.dataloader = load_data(self.opt)
 
     ##
     def forward_g(self, idx_g):
@@ -354,7 +359,7 @@ class Ganomaly(BaseModel):
         """ Re-initialize the weights of netD
         """
         self.netds[idx_d].apply(weights_init)
-        print('   Reloading net d')
+        print('Reloading net d')
 
     def optimize_params(self, idx_d, idx_g):
         """ Forwardpass, Loss Computation and Backwardpass.
