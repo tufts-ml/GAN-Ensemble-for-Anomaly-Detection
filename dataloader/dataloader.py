@@ -9,6 +9,7 @@ from dataloader.datasets import get_cifar_anomaly_dataset
 from dataloader.datasets import get_mnist_anomaly_dataset
 # from dataloader.kdd_dataset import get_loader
 from dataloader.kdd import KDD_dataset
+import numpy as np
 
 class Data:
     """ Dataloader containing train and valid sets.
@@ -87,14 +88,14 @@ def load_data(opt):
                    'test':ImageFolder(os.path.join(opt.dataroot, 'test'), test_transform),}
 
         train_dl = DataLoader(dataset=dataset['train'],
-                             batch_size=opt.batch_size,
+                             batch_size=opt.batchsize,
                              shuffle=shuffle['train'],
                              num_workers=int(opt.n_cpu),
                              drop_last=drop_last_batch['train'],
                              worker_init_fn=(None if 42 == -1
                              else lambda x: np.random.seed(42)))
         valid_dl = DataLoader(dataset=dataset['test'],
-                             batch_size=opt.batch_size,
+                             batch_size=opt.batchsize,
                              shuffle=shuffle['test'],
                              num_workers=int(opt.n_cpu),
                              drop_last=drop_last_batch['test'],
