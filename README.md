@@ -1,7 +1,7 @@
 # GAN-Ensemble-for-Anomaly-Detection
 
 
-This repository contains PyTorch implementation of the following paper: GAN-Ensemble-for-Anomaly-Detection
+This repository contains PyTorch implementation of the following paper: ["GAN-Ensemble-for-Anomaly-Detection"](https://arxiv.org/abs/2012.07988)
 
 ## 0. Environment Setup
 pip install -r requirements.txt
